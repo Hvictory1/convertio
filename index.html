@@ -5,9 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <meta name="apple-mobile-web-app-title" content="MP4转MP3">
+  <meta name="apple-mobile-web-app-title" content="视频转音频">
   <meta name="theme-color" content="#1a1a2e">
-  <title>MP4 转 MP3</title>
+  <title>视频转音频 - MP3 / WAV</title>
   <script src="lame.min.js"></script>
 
   <style>
@@ -68,7 +68,7 @@
       box-shadow: 0 8px 28px var(--primary-glow);
     }
     .header h1 {
-      font-size: 24px; font-weight: 700; letter-spacing: -0.3px;
+      font-size: 22px; font-weight: 700; letter-spacing: -0.3px;
       background: linear-gradient(135deg, #e2e8f0, #c4b5fd);
       -webkit-background-clip: text; -webkit-text-fill-color: transparent;
     }
@@ -198,6 +198,44 @@
       box-shadow: 0 0 0 3px rgba(124, 92, 252, 0.15);
     }
 
+    /* ── format selector ── */
+    .format-selector {
+      display: flex; gap: 0;
+      margin-top: 14px;
+    }
+    .format-option {
+      flex: 1;
+      padding: 10px 16px;
+      text-align: center;
+      font-size: 14px; font-weight: 600;
+      cursor: pointer;
+      border: 1px solid var(--border);
+      background: rgba(255,255,255,0.04);
+      color: var(--text-muted);
+      transition: all 0.2s;
+      position: relative;
+    }
+    .format-option:first-child {
+      border-radius: var(--radius-sm) 0 0 var(--radius-sm);
+    }
+    .format-option:last-child {
+      border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+    }
+    .format-option.active {
+      color: #fff;
+      background: rgba(124, 92, 252, 0.25);
+      border-color: var(--primary);
+      z-index: 1;
+    }
+    .format-option .fmt-badge {
+      display: block;
+      font-size: 9px;
+      font-weight: 400;
+      color: var(--text-muted);
+      margin-top: 1px;
+    }
+    .format-option.active .fmt-badge { color: var(--primary); }
+
     .icon-btn {
       width: 30px; height: 30px; border-radius: 50%;
       border: 1px solid var(--border);
@@ -316,8 +354,8 @@
 
   <div class="header">
     <div class="logo">🎵</div>
-    <h1>MP4 转 MP3</h1>
-    <p>从视频中提取音频 · 支持批量转换</p>
+    <h1>视频转音频</h1>
+    <p>从视频中提取音频 · 支持 MP3 / WAV · 批量转换</p>
   </div>
 
   <div class="card">
@@ -341,6 +379,16 @@
       <div class="file-list" id="fileList"></div>
     </div>
 
+    <!-- Format Selector -->
+    <div class="format-selector" id="formatSelector">
+      <button class="format-option active" data-format="mp3">
+        🎵 MP3<span class="fmt-badge">默认 · 体积小</span>
+      </button>
+      <button class="format-option" data-format="wav">
+        🎼 WAV<span class="fmt-badge">无损 · 音质佳</span>
+      </button>
+    </div>
+
     <!-- Convert Button -->
     <button class="btn btn-primary" id="btnConvert" disabled>
       开始转换
@@ -360,6 +408,7 @@
 
   <div class="footer">
     完全在本地处理 · 文件不会上传到任何服务器
+    <br>支持 MP3（有损压缩）与 WAV（无损）格式
   </div>
 
   <script>
@@ -385,6 +434,7 @@
       // ─── State ───
       let files = [];      // { id, file, status: 'pending'|'processing'|'done'|'error', mp3Blob, error }
       let isConverting = false;
+      let outputFormat = 'mp3';  // 'mp3' | 'wav'
       let idCounter = 0;
 
       // Status icons
@@ -431,7 +481,8 @@
             status: 'pending',
             mp3Blob: null,
             error: null,
-            outputName: file.name.replace(/\.(mp4|mov|mkv|avi|webm|flv|wmv)$/i, '') + '.mp3',
+            convertedFormat: null,
+            outputName: file.name.replace(/\.(mp4|mov|mkv|avi|webm|flv|wmv)$/i, '') + '.' + outputFormat,
           });
           added++;
         }
@@ -481,7 +532,8 @@
         const pendingCount = files.filter(f => f.status === 'pending' || f.status === 'error').length;
         btnConvert.disabled = (pendingCount === 0 || isConverting);
         if (pendingCount > 0) {
-          btnConvert.textContent = `🎵 转换全部（${pendingCount} 个文件）`;
+          const fmtLabel = outputFormat === 'wav' ? 'WAV' : 'MP3';
+          btnConvert.textContent = `🎵 转为 ${fmtLabel}（${pendingCount} 个文件）`;
         } else {
           btnConvert.textContent = '开始转换';
         }
@@ -505,7 +557,8 @@
           let actionHtml = '';
 
           if (f.status === 'done' && f.mp3Blob) {
-            metaHtml += ` → ${formatBytes(f.mp3Blob.size)} MP3`;
+            const fmt = f.convertedFormat || 'mp3';
+            metaHtml += ` → ${formatBytes(f.mp3Blob.size)} ${fmt.toUpperCase()}`;
             actionHtml = `<button class="icon-btn download" data-action="download" data-id="${f.id}" title="下载">📥</button>`;
           } else if (f.status === 'error') {
             metaHtml += ` · ${f.error}`;
@@ -622,6 +675,90 @@
         clearAll();
       });
 
+      // ─── Format selector ───
+      document.getElementById('formatSelector').addEventListener('click', (e) => {
+        const btn = e.target.closest('.format-option');
+        if (!btn || isConverting) return;
+        const fmt = btn.dataset.format;
+        if (fmt === outputFormat) return;
+
+        outputFormat = fmt;
+
+        // Toggle active
+        document.querySelectorAll('.format-option').forEach(b => b.classList.toggle('active', b.dataset.format === fmt));
+
+        // Update pending file extensions (only pending ones)
+        files.forEach(f => {
+          if (f.status === 'pending' || f.status === 'error') {
+            f.outputName = f.outputName.replace(/\.(mp3|wav)$/i, '') + '.' + fmt;
+          }
+        });
+
+        renderFileList();
+        showToast(`输出格式已切换为 ${fmt.toUpperCase()}`, 'info');
+      });
+
+      // ─── PCM to WAV encoding ───
+      function writeStr(view, offset, str) {
+        for (let i = 0; i < str.length; i++) {
+          view.setUint8(offset + i, str.charCodeAt(i));
+        }
+      }
+
+      function encodePCMtoWAV(audioBuffer, onProgress) {
+        return new Promise((resolve) => {
+          const sampleRate = audioBuffer.sampleRate;
+          const channels = audioBuffer.numberOfChannels;
+          const length = audioBuffer.length;
+          const bitsPerSample = 16;
+          const byteRate = sampleRate * channels * bitsPerSample / 8;
+          const blockAlign = channels * bitsPerSample / 8;
+          const dataLength = length * channels * (bitsPerSample / 8);
+
+          const buffer = new ArrayBuffer(44 + dataLength);
+          const view = new DataView(buffer);
+
+          writeStr(view, 0, 'RIFF');
+          view.setUint32(4, 36 + dataLength, true);
+          writeStr(view, 8, 'WAVE');
+          writeStr(view, 12, 'fmt ');
+          view.setUint32(16, 16, true);
+          view.setUint16(20, 1, true);
+          view.setUint16(22, channels, true);
+          view.setUint32(24, sampleRate, true);
+          view.setUint32(28, byteRate, true);
+          view.setUint16(32, blockAlign, true);
+          view.setUint16(34, bitsPerSample, true);
+          writeStr(view, 36, 'data');
+          view.setUint32(40, dataLength, true);
+
+          const chData = [];
+          for (let ch = 0; ch < channels; ch++) {
+            chData.push(audioBuffer.getChannelData(ch));
+          }
+
+          let offset = 44;
+          const blockSize = 1152;
+          const totalBlocks = Math.ceil(length / blockSize);
+
+          for (let block = 0; block < totalBlocks; block++) {
+            const start = block * blockSize;
+            const end = Math.min(start + blockSize, length);
+            for (let i = start; i < end; i++) {
+              for (let ch = 0; ch < channels; ch++) {
+                const s = Math.max(-32768, Math.min(32767, Math.round(chData[ch][i] * 32767)));
+                view.setInt16(offset, s, true);
+                offset += 2;
+              }
+            }
+            const progress = Math.round((block / totalBlocks) * 100);
+            onProgress(progress, '编码 WAV…');
+          }
+
+          resolve(new Blob([buffer], { type: 'audio/wav' }));
+        });
+      }
+
       // ─── PCM to MP3 encoding ───
       function encodePCMtoMP3(audioBuffer, onProgress) {
         return new Promise((resolve, reject) => {
@@ -700,15 +837,21 @@
 
         const duration = audioBuffer.duration;
         const channels = audioBuffer.numberOfChannels;
-        onProgress(30, `音频 ${Math.floor(duration)}s, ${channels}声道 · 编码中…`);
+        const isWav = outputFormat === 'wav';
+        onProgress(30, `音频 ${Math.floor(duration)}s, ${channels}声道 · ${isWav ? '编码 WAV…' : '编码中…'}`);
 
-        const mp3Blob = await encodePCMtoMP3(audioBuffer, (pct, text) => {
-          const overall = 30 + Math.round(pct * 0.65);
-          onProgress(overall, text);
-        });
+        const audioBlob = isWav
+          ? await encodePCMtoWAV(audioBuffer, (pct, text) => {
+              const overall = 30 + Math.round(pct * 0.65);
+              onProgress(overall, text);
+            })
+          : await encodePCMtoMP3(audioBuffer, (pct, text) => {
+              const overall = 30 + Math.round(pct * 0.65);
+              onProgress(overall, text);
+            });
 
         onProgress(98, '完成');
-        return mp3Blob;
+        return audioBlob;
       }
 
       // ─── Fallback: decode via <video> ───
@@ -810,8 +953,9 @@
 
           try {
             updateProgress(0, '开始处理…');
-            const mp3Blob = await convertOneFile(fileObj, updateProgress);
-            fileObj.mp3Blob = mp3Blob;
+            const audioBlob = await convertOneFile(fileObj, updateProgress);
+            fileObj.mp3Blob = audioBlob;
+            fileObj.convertedFormat = outputFormat;
             fileObj.status = 'done';
           } catch (err) {
             console.error('Conversion error:', err);
