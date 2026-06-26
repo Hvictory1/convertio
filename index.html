@@ -290,26 +290,22 @@
     }
     .btn-outline:hover { background: rgba(255,255,255,0.04); }
 
-    /* ── progress ── */
-    .progress-wrap {
-      display: none; margin-top: 14px;
-    }
-    .progress-wrap.show { display: block; animation: fadeIn 0.3s ease; }
-
-    .progress-label {
-      display: flex; justify-content: space-between;
-      font-size: 12px; color: var(--text-muted); margin-bottom: 6px;
-    }
-    .progress-bar {
-      width: 100%; height: 6px;
+    /* ── per-file progress ── */
+    .fi-progress {
+      height: 3px;
       background: var(--border);
       border-radius: 99px; overflow: hidden;
+      margin-top: 3px;
     }
-    .progress-fill {
+    .fi-progress-fill {
       height: 100%; width: 0%;
       background: linear-gradient(90deg, var(--primary), var(--success));
       border-radius: 99px;
       transition: width 0.35s ease;
+    }
+    .fi-status-text {
+      font-size: 11px; color: var(--primary); margin-top: 2px;
+      animation: pulse 1.5s ease-in-out infinite;
     }
 
     /* ── toast ── */
@@ -393,17 +389,6 @@
     <button class="btn btn-primary" id="btnConvert" disabled>
       开始转换
     </button>
-
-    <!-- Progress -->
-    <div class="progress-wrap" id="progressWrap">
-      <div class="progress-label">
-        <span id="progressText">正在处理…</span>
-        <span id="progressPercent">0%</span>
-      </div>
-      <div class="progress-bar">
-        <div class="progress-fill" id="progressFill"></div>
-      </div>
-    </div>
   </div>
 
   <div class="footer">
@@ -425,10 +410,6 @@
       const btnAddMore  = document.getElementById('btnAddMore');
       const btnClearAll = document.getElementById('btnClearAll');
       const btnConvert  = document.getElementById('btnConvert');
-      const progressWrap  = document.getElementById('progressWrap');
-      const progressText  = document.getElementById('progressText');
-      const progressPercent = document.getElementById('progressPercent');
-      const progressFill  = document.getElementById('progressFill');
       const toast       = document.getElementById('toast');
 
       // ─── State ───
@@ -482,6 +463,8 @@
             mp3Blob: null,
             error: null,
             convertedFormat: null,
+            progress: 0,
+            progressText: '',
             outputName: file.name.replace(/\.(mp4|mov|mkv|avi|webm|flv|wmv)$/i, '') + '.' + outputFormat,
           });
           added++;
@@ -516,19 +499,7 @@
 
       // ─── Update drop zone appearance ───
       function updateDropZone() {
-        if (files.length > 0) {
-          dropIcon.textContent = '✅';
-          dropTitle.textContent = `已选择 ${files.length} 个文件`;
-          dropHint.textContent = '点击可继续添加';
-          dropZone.classList.add('has-file');
-        } else {
-          dropIcon.textContent = '📁';
-          dropTitle.textContent = '点击选择 MP4 文件（支持多选）';
-          dropHint.textContent = '或将文件拖拽到此处';
-          dropZone.classList.remove('has-file');
-        }
-
-        // Enable/disable convert
+        // Drop zone stays clean — all status is in the file list
         const pendingCount = files.filter(f => f.status === 'pending' || f.status === 'error').length;
         btnConvert.disabled = (pendingCount === 0 || isConverting);
         if (pendingCount > 0) {
@@ -579,6 +550,9 @@
               <div class="fi-info">
                 <div class="fi-name">${escapeHtml(f.file.name)}</div>
                 <div class="fi-meta">${metaHtml}</div>
+                ${f.status === 'processing' ? `
+                <div class="fi-progress"><div class="fi-progress-fill" style="width:${f.progress || 0}%"></div></div>
+                <div class="fi-status-text">${escapeHtml(f.progressText || '处理中…')}</div>` : ''}
                 ${f.status === 'done' && f.mp3Blob ? `
                 <div class="rename-row">
                   <span class="rename-label">重命名为</span>
@@ -932,10 +906,10 @@
         isConverting = true;
         btnConvert.disabled = true;
         btnConvert.innerHTML = '<span class="loading-text">⏳ 转换中…</span>';
-        progressWrap.classList.add('show');
 
         const totalPending = pending.length;
         let completed = 0;
+        listCount.textContent = `转换中… ${completed}/${totalPending}`;
 
         for (let i = 0; i < pending.length; i++) {
           const fileObj = pending[i];
@@ -945,10 +919,13 @@
 
           // Per-file progress
           const updateProgress = (pct, text) => {
+            fileObj.progress = pct;
+            fileObj.progressText = text;
             const overallPct = Math.round(((completed + pct / 100) / totalPending) * 100);
-            progressPercent.textContent = overallPct + '%';
-            progressFill.style.width = overallPct + '%';
-            progressText.textContent = `[${completed + 1}/${totalPending}] ${fileObj.file.name}: ${text}`;
+            if (pct % 15 === 1 || pct >= 98) {
+              renderFileList();
+              listCount.textContent = `转换中 ${overallPct}% · ${completed + 1}/${totalPending}`;
+            }
           };
 
           try {
@@ -963,13 +940,13 @@
             fileObj.error = err.message || '未知错误';
           }
 
+          fileObj.progress = 100;
           completed++;
           renderFileList();
         }
 
         // All done
         isConverting = false;
-        progressWrap.classList.remove('show');
 
         const doneCount = files.filter(f => f.status === 'done').length;
         const errCount = files.filter(f => f.status === 'error').length;
